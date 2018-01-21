@@ -1,0 +1,115 @@
+---
+title: "Peer-graded Assignment: Prediction Assignment Writeup"
+author: "Phuc Nguyen"
+date: "January 18, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+suppressMessages(library(caret))
+suppressMessages(library(rpart))
+suppressMessages(library(rpart.plot))
+suppressMessages(library(RColorBrewer))
+suppressMessages(library(rattle))
+suppressMessages(library(ggplot2))
+```
+
+## Summary
+
+Given the data from accelerators on the belt, forearm, arm, and dumbell of 6 participants who were asked to perform barbell lifts correctly and incorrectly in 5 different ways. The goal is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. The report is straight forward, first we explore the data to understand the content and find out if it needs other preprocess to clean the data. Next step is to create training set and test set from loaded data. The final step is to try different studied models to find out the nature of the data, if these model performs poorly we will do more data analysis step.
+
+In the three tested model (random forest, boosted trees and linear discriminant analysis), random forest give a very high accuracy of about 99%.
+
+## Part 1: Quick look to the data
+
+In this part, we will take a quick look to the training and testing dataset from [Weight Lifting Exercises Dataset](http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises "Weight Lifting Exercises Dataset"):
+
+- Load the dataset:
+```{r loading, echo=TRUE, cache=TRUE}
+pml_Training <- read.csv("pml-training.csv")
+pml_Testing <- read.csv("pml-testing.csv")
+```
+- Quick look at the content:
+```{r quicklook, echo=TRUE, cache=TRUE,eval = FALSE}
+str(pml_Training)
+str(pml_Testing)
+```
+The result of this chunk is not show because it is pretty long (160 variables). The data loaded is very messy (there is a lot NA, #DIV/0!, ""). Luckily, from the content of test set, we can infer that there are many variable that can't be used in the training because it's values only NA. This simple code will find out what these variable are:
+```{r checking, echo=TRUE, cache=TRUE}
+na_columns_check <- sapply(pml_Testing, function(x)all(is.na(x)))
+na_columns_name <- names(na_columns_check[na_columns_check == TRUE])
+length(na_columns_name)
+```
+We have 100 NA columns which useless in test data so these column in addition with seven meta data column (X, user_name, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, new_window, num_window) will be excluded from the datasets.
+```{r remove_column, echo=TRUE, cache=TRUE}
+meta_column <- c("X", "user_name", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp", "new_window", "num_window")
+na_columns_name <- append(na_columns_name, meta_column)
+pml_Training <- pml_Training[ , !(names(pml_Training) %in% na_columns_name)]
+#Note that pml_Testing still have problemId so that column will also be removed
+na_columns_name <- append(na_columns_name, c("problem_id"))
+pml_Testing <- pml_Testing[ , !(names(pml_Testing) %in% na_columns_name)]
+
+#Safe checking
+any(is.na(pml_Training))
+any(is.na(pml_Testing))
+```
+Now the data is nice and clean.
+
+## Part 2: Partition
+
+There are five outcome of classe:
+```{r outcome, echo=TRUE, cache=TRUE}
+unique(pml_Training$classe)
+```
+As usual a training dataset will consists of 70% data and a test dataset will be 30%. At this point there is no need for a validation set because the model has not been built and tested yet.
+```{r partition, echo=TRUE, cache=TRUE}
+# For reproducibility
+set.seed(33833)
+# Init
+isTrain <- createDataPartition(pml_Training$classe, p = 0.7, list = FALSE)
+training <- pml_Training[isTrain, ]
+testing <- pml_Training[-isTrain, ]
+```
+
+## Part 3: Model chossing
+
+For beginning, there are three model can be used:  random forest ("rf"), boosted trees ("gbm") and linear discriminant analysis ("lda") model.
+
+```{r load_model, echo=TRUE, cache=TRUE}
+#The training is long, so i save the model to RData file and load it for Rmarkdown can knit the html
+#I won't include the model in the github repository because it really large
+# save(rfFit, gbmFit, file = "models.RData")
+load("models.RData")
+```
+
+```{r rf, echo=TRUE, cache=TRUE}
+#The training is prety long (2 hours) so i will comment this code to make the export part faster
+#rfFit <- train(classe ~.,  data = training, method = "rf")
+invisible(rfPred <- predict(rfFit, testing))
+confusionMatrix(rfPred, testing$classe)$overall[1]
+```
+
+```{r gbm, echo=TRUE, cache=TRUE}
+#The training is prety long (1.5 hours) so i will comment this code to make the export part faster
+#gbmFit <- train(classe ~.,  data = training, method = "gbm", verbose = FALSE)
+invisible(gbmPred <- predict(gbmFit, testing))
+confusionMatrix(gbmPred, testing$classe)$overall[1]
+#save(rfFit, gbmFit, file = "models.RData")
+```
+```{r lda, echo=TRUE, cache=TRUE}
+ldaFit <- train(classe ~.,  data = training, method = "lda")
+invisible(ldaPred <- predict(ldaFit, testing))
+confusionMatrix(ldaPred, testing$classe)$overall[1]
+```
+Of all there model random forest delivery best result about 99% of the test set was predict true. Therefore, it is good to stop at this point.
+
+## Part 4: Predicting the supplied test set
+
+Here is the prediction for the test data:
+
+```{r predict, echo=TRUE, cache=TRUE}
+result <- as.character(predict(rfFit, pml_Testing))
+names(result) <- c(1:20)
+result
+```
